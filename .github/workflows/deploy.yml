@@ -1,0 +1,45 @@
+name: deploy-to-gke
+
+# Manual trigger only, so it never runs before the cluster exists.
+on: workflow_dispatch
+
+# id-token: write lets this job ask GitHub for a short-lived OIDC token.
+# That token is exchanged for Google credentials. No JSON key is stored anywhere.
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Workload Identity Federation: GitHub token -> Google short-lived credentials
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_SA }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: gke-gcloud-auth-plugin
+
+      # Writes a kubeconfig for the cluster (runs: gcloud container clusters get-credentials)
+      - uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ vars.GKE_CLUSTER }}
+          location: ${{ vars.GKE_LOCATION }}
+          project_id: ${{ vars.GCP_PROJECT }}
+
+      - name: Who am I?
+        run: |
+          gcloud auth list
+          kubectl auth whoami
+
+      - name: Deploy
+        run: |
+          kubectl apply -f k8s/
+          kubectl rollout status deployment/gha-demo --timeout=180s
+          kubectl get pods -l app=gha-demo -o wide
