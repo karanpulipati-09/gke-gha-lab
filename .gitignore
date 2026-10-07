@@ -1,0 +1,24 @@
+# Terraform state holds resource attributes IN PLAINTEXT - including secrets.
+# It must never reach a repository, public or private.
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+.terraform/
+crash.log
+
+# Variable files carry project ids, billing accounts and other specifics
+*.tfvars
+!*.tfvars.example
+
+# Credentials
+*.json
+!package.json
+service-account*.json
+application_default_credentials.json
+kubeconfig*
+
+# Plan files can contain secrets
+*.tfplan
+
+# Personal notes (contain billing account id)
+LAB-STATE.md

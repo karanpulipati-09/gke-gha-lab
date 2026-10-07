@@ -1,0 +1,93 @@
+# The Q1 and Q2 answers, made real. Deploy this after the cluster is up.
+# The image comes from Docker Hub on purpose - if it pulls, Cloud NAT works.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  labels: { app: web }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: web }
+  template:
+    metadata:
+      labels: { app: web }
+    spec:
+      containers:
+        - name: web
+          image: nginx:1.27-alpine
+          ports:
+            - containerPort: 80
+
+          # HPA scales on usage as a percentage of REQUESTS, not limits.
+          # Wrong requests = wrong HPA and wrong node autoscaling. (Q2, Q12)
+          resources:
+            requests: { cpu: 100m, memory: 64Mi }
+            limits: { cpu: 300m, memory: 128Mi }
+
+          # --- Q1: all three probes, in execution order -------------------
+          # Gatekeeper. Liveness and readiness are BLOCKED until this passes,
+          # so a slow-starting JVM gets a generous budget without forcing a
+          # long initialDelaySeconds on liveness.
+          startupProbe:
+            httpGet: { path: /, port: 80 }
+            periodSeconds: 5
+            failureThreshold: 30 # 30 x 5s = 150s of startup grace
+
+          # Gates TRAFFIC. Failure removes the pod from Service endpoints.
+          # No restart. Fail fast - stop sending traffic immediately.
+          readinessProbe:
+            httpGet: { path: /, port: 80 }
+            periodSeconds: 5
+            failureThreshold: 1
+
+          # Gates LIFE. Failure RESTARTS the container, so be forgiving -
+          # an aggressive liveness probe restarts pods that are healthy but
+          # busy, and turns a load spike into a cascading outage.
+          livenessProbe:
+            httpGet: { path: /, port: 80 }
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+spec:
+  selector: { app: web }
+  ports:
+    - port: 80
+      targetPort: 80
+---
+# --- Q2: the behavior block --------------------------------------------
+# The principle in one line: SCALE UP FAST, SCALE DOWN SLOW.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: web
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: web
+  minReplicas: 2
+  maxReplicas: 12
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 50 }
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0 # react immediately
+      policies:
+        - { type: Percent, value: 100, periodSeconds: 15 } # can double every 15s
+        - { type: Pods, value: 4, periodSeconds: 15 }
+      selectPolicy: Max # take the MORE aggressive of the two
+    scaleDown:
+      stabilizationWindowSeconds: 300 # look back 5 min before shrinking
+      policies:
+        - { type: Percent, value: 10, periodSeconds: 60 }
+      selectPolicy: Min # take the GENTLER option
