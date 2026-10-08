@@ -164,3 +164,45 @@ resource "google_container_node_pool" "primary_nodes" {
 output "get_credentials" {
   value = "gcloud container clusters get-credentials ${google_container_cluster.primary.name} --zone ${var.zone} --project ${var.project_id}"
 }
+
+# ---------------------------------------------------------------------------
+# Node pool migration: pool-v2 has a larger machine type. Machine type cannot be
+# changed in place on an existing pool, so we add a NEW pool, move the workloads
+# (cordon + drain the old nodes), then remove the old pool in a later change.
+# ---------------------------------------------------------------------------
+resource "google_container_node_pool" "pool_v2" {
+  name     = "pool-v2"
+  cluster  = google_container_cluster.primary.id
+  location = var.zone
+
+  initial_node_count = 1
+
+  autoscaling {
+    min_node_count = 1
+    max_node_count = 3
+  }
+
+  node_config {
+    machine_type = "e2-standard-2"
+    disk_size_gb = 50
+    oauth_scopes = ["https://www.googleapis.com/auth/cloud-platform"]
+
+    labels = {
+      pool = "v2"
+    }
+
+    workload_metadata_config {
+      mode = "GKE_METADATA"
+    }
+  }
+
+  management {
+    auto_repair  = true
+    auto_upgrade = true
+  }
+
+  upgrade_settings {
+    max_surge       = 1
+    max_unavailable = 0
+  }
+}
