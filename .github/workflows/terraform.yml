@@ -1,0 +1,56 @@
+name: terraform
+
+# Pull request touching terraform/ -> plan only (never changes anything).
+# Manual run -> plan, or apply (apply is allowed from main only).
+on:
+  pull_request:
+    paths: ["terraform/**"]
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "plan or apply"
+        type: choice
+        options: [plan, apply]
+        default: plan
+
+permissions:
+  contents: read
+  id-token: write # needed to get the OIDC token for Workload Identity Federation
+
+env:
+  TF_VAR_project_id: ${{ vars.GCP_PROJECT }}
+  TF_IN_AUTOMATION: "true"
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@v4
+
+      # Runs as the gha-terraform service account. No key is stored anywhere.
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.TF_SA }}
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Format check
+        run: terraform fmt -check -recursive
+
+      - name: Init (remote state in GCS)
+        run: terraform init -input=false
+
+      - name: Validate
+        run: terraform validate
+
+      - name: Plan
+        run: terraform plan -input=false -out=tfplan
+
+      - name: Apply
+        if: github.event_name == 'workflow_dispatch' && inputs.action == 'apply' && github.ref == 'refs/heads/main'
+        run: terraform apply -input=false tfplan

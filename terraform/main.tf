@@ -1,5 +1,13 @@
 terraform {
   required_version = ">= 1.5.0"
+
+  # Remote state: versioned GCS bucket. GCS provides state locking, and the bucket
+  # versioning keeps old copies so a bad state can be rolled back.
+  backend "gcs" {
+    bucket = "karan-gke-lab-1005-tfstate"
+    prefix = "gke/lab"
+  }
+
   required_providers {
     google = {
       source  = "hashicorp/google"
