@@ -126,41 +126,6 @@ resource "google_container_cluster" "primary" {
   }
 }
 
-resource "google_container_node_pool" "primary_nodes" {
-  name     = "lab-pool"
-  cluster  = google_container_cluster.primary.id
-  location = var.zone
-
-  initial_node_count = 1
-
-  # The node-level autoscaler (Q12). Cluster Autoscaler adds a node when
-  # pods go Pending, and removes one when a node sits underutilised.
-  autoscaling {
-    min_node_count = 1
-    max_node_count = 3
-  }
-
-  node_config {
-    machine_type = "e2-medium"
-    disk_size_gb = 50
-    oauth_scopes = ["https://www.googleapis.com/auth/cloud-platform"]
-
-    workload_metadata_config {
-      mode = "GKE_METADATA" # required for Workload Identity
-    }
-  }
-
-  management {
-    auto_repair  = true
-    auto_upgrade = true
-  }
-
-  upgrade_settings {
-    max_surge       = 1
-    max_unavailable = 0
-  }
-}
-
 output "get_credentials" {
   value = "gcloud container clusters get-credentials ${google_container_cluster.primary.name} --zone ${var.zone} --project ${var.project_id}"
 }
