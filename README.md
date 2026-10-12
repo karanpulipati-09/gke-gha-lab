@@ -11,7 +11,7 @@ A private GKE cluster on GCP, built with Terraform and deployed to from GitHub A
 | `k8s/` | Manifests the pipeline deploys (`deploy.yml` applies this folder) |
 | `lab/workload.yaml` | The nginx app used for probe, HPA and 503 exercises (applied by hand, not by the pipeline) |
 | `docs/RUNBOOK.md` | Step-by-step lab runbook |
-| `.github/workflows/` | `deploy.yml` (kubectl apply to GKE via federation) |
+| `.github/workflows/` | `deploy.yml` (kubectl apply to GKE via federation), `terraform.yml` (plan on pull requests, apply from main only), `destroy.yml` (manual teardown, must type "destroy") |
 
 ## How the pipeline authenticates
 
@@ -21,8 +21,17 @@ tokens **only from this repository**, and let the run act as the service account
 
 ## State
 
-Terraform state is **local for now** and is never committed (see `.gitignore`). Moving it to a
-versioned GCS backend, and running Terraform from GitHub Actions, is the next step.
+Terraform state lives in a **versioned GCS bucket** (state locking is built in, and versioning lets a
+bad state be rolled back). It is never committed (see `.gitignore`). The `terraform.yml` workflow runs
+`plan` on pull requests that touch `terraform/`, and `apply` only from `main`.
+
+## What was exercised
+
+- Control plane and node upgrade with surge settings and a PodDisruptionBudget.
+- Node pool migration: a new pool (`pool-v2`) was added, workloads were cordoned and drained to it,
+  then the old pool was removed.
+- A 503 behind ingress-nginx was reproduced and fixed.
+- Probes (startup, readiness, liveness) and an HPA with a `behavior` block.
 
 ## Notes
 
